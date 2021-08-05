@@ -1,0 +1,64 @@
+{
+  "name": "doable",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "blitz dev",
+    "build": "blitz build",
+    "start": "blitz start",
+    "studio": "blitz prisma studio",
+    "lint": "eslint --ignore-path .gitignore --ext .js,.ts,.tsx .",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "prepare": "husky install"
+  },
+  "prisma": {
+    "schema": "db/schema.prisma"
+  },
+  "prettier": {
+    "trailingComma": "all",
+    "proseWrap": "always"
+  },
+  "lint-staged": {
+    "*.{js,ts,tsx}": [
+      "eslint --fix"
+    ]
+  },
+  "dependencies": {
+    "@ableco/abledev-components": "0.0.1-alpha15",
+    "@heroicons/react": "1.0.2",
+    "@hookform/resolvers": "2.6.1",
+    "@prisma/client": "2.27.0",
+    "@types/lodash": "4.14.171",
+    "@types/lodash-es": "4.17.4",
+    "@types/passport-google-oauth": "1.0.42",
+    "autoprefixer": "10",
+    "blitz": "0.38.5",
+    "date-fns": "2.23.0",
+    "lodash": "4.17.21",
+    "lodash-es": "4.17.21",
+    "passport-google-oauth": "2.0.0",
+    "postcss": "8",
+    "react": "alpha",
+    "react-dom": "alpha",
+    "react-hook-form": "7.11.1",
+    "socket.io": "4.1.3",
+    "socket.io-client": "4.1.3",
+    "tailwindcss": "2.1.2",
+    "zod": "3.5.1"
+  },
+  "devDependencies": {
+    "@types/preview-email": "2.0.1",
+    "@types/react": "17.0.14",
+    "eslint": "7.31.0",
+    "husky": "6.0.0",
+    "lint-staged": "10.5.4",
+    "prettier": "2.3.2",
+    "prettier-plugin-prisma": "0.14.0",
+    "pretty-quick": "3.1.1",
+    "preview-email": "3.0.4",
+    "prisma": "2.27.0",
+    "source-map-js": "0.6.2",
+    "typescript": "~4.3"
+  },
+  "private": true
+}

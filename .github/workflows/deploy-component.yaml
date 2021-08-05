@@ -1,0 +1,81 @@
+name: Deployment
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy-component:
+    name: Deploy Component
+    runs-on: ubuntu-20.04
+    env:
+      KUBE_TOKEN: ${{ secrets.ABLE_KUBE_TOKEN }}
+      KUBE_CONFIG_DATA: ${{ secrets.ABLE_KUBE_CONFIG_DATA}}
+      KUBECONFIG: /tmp/kube-config
+      ECR_REPOSITORY: platform
+      IMAGE_TAG: ${{ github.sha }}
+      AWS_REGION: us-east-1
+      AWS_CERTIFICATE_ARN: ${{ secrets.ABLE_AWS_CERTIFICATE_ARN }}
+      PLATFORM_APP_NAME: ${{ github.event.repository.name }}
+      PLATFORM_DB_PASSWORD: ${{ secrets.PLATFORM_DB_PASSWORD }}
+      RDS_MASTER_HOST: terraform-20210802015341504500000002.cvvdjoavecoc.us-east-1.rds.amazonaws.com
+    steps:
+      - uses: actions/checkout@v2
+      - name: Get Database name
+        run: echo PLATFORM_DB_NAME=$(echo $PLATFORM_APP_NAME | tr '-' '_') >> $GITHUB_ENV
+      - name: Create new database
+        run: |
+          PGPASSWORD=${{ secrets.RDS_MASTER_PASSWORD }} psql -U root -h $RDS_MASTER_HOST platform -c "drop database if exists $PLATFORM_DB_NAME"
+          PGPASSWORD=${{ secrets.RDS_MASTER_PASSWORD }} psql -U root -h $RDS_MASTER_HOST platform -c "create database $PLATFORM_DB_NAME"
+          PGPASSWORD=${{ secrets.RDS_MASTER_PASSWORD }} psql -U root -h $RDS_MASTER_HOST platform -c "drop role if exists $PLATFORM_DB_NAME"
+          PGPASSWORD=${{ secrets.RDS_MASTER_PASSWORD }} psql -U root -h $RDS_MASTER_HOST platform -c "create user $PLATFORM_DB_NAME with encrypted password '$PLATFORM_DB_PASSWORD'"
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_ABLE }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_ABLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+      - name: Build, tag, and push image to Amazon ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          docker build \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          echo "::set-output name=image::$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+      - name: Set cluster configuration
+        run: |
+          echo "$KUBE_CONFIG_DATA" | base64 -d > /tmp/kube-config
+          chmod 600 /tmp/kube-config
+      - name: Run helm
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          AWS_CERTIFICATE_ARN: ${{ secrets.AWS_CERTIFICATE_ARN }}
+          GOOGLE_CLIENT_ID: ${{ secrets.PLATFORM_GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.PLATFORM_GOOGLE_CLIENT_SECRET }}
+          SESSION_SECRET_KEY: ${{ secrets.PLATFORM_SESSION_SECRET_KEY }}
+          GOOGLE_CALLBACK_URL: https://oauth-proxy.able.co
+          DATABASE_URL: postgresql://$PLATFORM_DB_NAME:$PLATFORM_DB_PASSWORD@$RDS_MASTER_HOST:5432/$PLATFORM_DB_NAME
+        run: |
+          helm upgrade --wait --install $PLATFORM_APP_NAME job-request \
+            --namespace platform \
+            --set image.repository=$ECR_REGISTRY/$ECR_REPOSITORY \
+            --set image.tag=$IMAGE_TAG \
+            --set ingress.alb.certificateArn=$AWS_CERTIFICATE_ARN \
+            --set env.database_url=$DATABASE_URL \
+            --set env.session_secret_key=$SESSION_SECRET_KEY \
+            --set env.google_client_id=$GOOGLE_CLIENT_ID \
+            --set env.google_client_secret=$GOOGLE_CLIENT_SECRET \
+            --set env.google_callback_url=$GOOGLE_CALLBACK_URL \
+            --kube-token $KUBE_TOKEN
+        working-directory: helm
+      - name: Get pod
+        run: echo PLATFORM_APP_POD=$(kubectl --token=$KUBE_TOKEN get pods -l app.kubernetes.io/instance=$PLATFORM_APP_NAME --namespace platform  -o jsonpath='{.items[0].metadata.name}') >> $GITHUB_ENV
+      - name: Run migrations 
+        run: kubectl --token=$KUBE_TOKEN exec -i $PLATFORM_APP_POD --namespace platform -- ./node_modules/.bin/blitz prisma migrate deploy

@@ -1,0 +1,31 @@
+{{- if .Values.ingress.enabled -}}
+{{- $fullName := include "component.fullname" . -}}
+{{- $svcPort := .Values.service.port -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullName }}
+  labels:
+    {{- include "component.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+    alb.ingress.kubernetes.io/certificate-arn: {{ .Values.ingress.alb.certificateArn }}
+spec:
+  rules:
+    {{- range .Values.ingress.hosts }}
+    - host: {{ $fullName }}.able.dev
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $fullName }}
+                port:
+                  number: {{ $svcPort }}
+          {{- end }}
+    {{- end }}
+{{- end }}
